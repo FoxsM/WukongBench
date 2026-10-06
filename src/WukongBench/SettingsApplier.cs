@@ -148,7 +148,8 @@ public static class SettingsApplier
         Check("ScreenResolution", expectedResolution, "Разрешение");
         Check("QualityLevel", (Math.Clamp(p.Quality, 0, 4) + 1).ToString(), "Пресет качества");
         Check("ImageQuality", Math.Clamp(p.ResolutionScale, 25, 100).ToString(), "Масштаб рендера");
-        Check("Rtx", p.RayTracing ? "1" : "0", "Ray Tracing");
+        // В JSON поле Rtx = уровень Full RT в нумерации меню (0 = выкл, 1 Low … 4 Very High)
+        Check("Rtx", p.RayTracing ? (Math.Clamp(p.RayTracingLevel, 0, 3) + 1).ToString() : "0", "Ray Tracing (уровень)");
         Check("InsertFrame", "0", "Генерация кадров");
         return issues;
     }

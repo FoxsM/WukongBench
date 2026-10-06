@@ -34,6 +34,44 @@ public static class InputSender
         if (fgThread != myThread) AttachThreadInput(myThread, fgThread, false);
     }
 
+    /// <summary>
+    /// Клик левой кнопкой в точке (fx, fy), заданной долями клиентской области окна (0..1).
+    /// Курсор сначала наводится и немного «шевелится» — UE-меню подсвечивает кнопку только по hover.
+    /// </summary>
+    public static void ClickRelative(IntPtr hwnd, double fx, double fy)
+    {
+        if (!GetClientRect(hwnd, out var rc)) throw new InvalidOperationException("Не удалось получить размер окна бенчмарка.");
+        var pt = new POINT { X = (int)(rc.Right * fx), Y = (int)(rc.Bottom * fy) };
+        ClientToScreen(hwnd, ref pt);
+
+        MoveMouse(pt.X - 10, pt.Y);
+        Thread.Sleep(150);
+        MoveMouse(pt.X, pt.Y);
+        Thread.Sleep(350);
+
+        SendMouse(MOUSEEVENTF_LEFTDOWN);
+        Thread.Sleep(80);
+        SendMouse(MOUSEEVENTF_LEFTUP);
+    }
+
+    private static void MoveMouse(int x, int y)
+    {
+        SetCursorPos(x, y);
+        // Дублируем абсолютным SendInput: часть игр не видит SetCursorPos как движение мыши.
+        int vx = GetSystemMetrics(SM_XVIRTUALSCREEN), vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        int vw = Math.Max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN)), vh = Math.Max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN));
+        var mi = new MOUSEINPUT
+        {
+            dx = (int)((x - vx) * 65535.0 / (vw - 1)),
+            dy = (int)((y - vy) * 65535.0 / (vh - 1)),
+            dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
+        };
+        SendInput(1, new[] { new INPUT { type = INPUT_MOUSE, U = new InputUnion { mi = mi } } }, Marshal.SizeOf<INPUT>());
+    }
+
+    private static void SendMouse(uint flags) =>
+        SendInput(1, new[] { new INPUT { type = INPUT_MOUSE, U = new InputUnion { mi = new MOUSEINPUT { dwFlags = flags } } } }, Marshal.SizeOf<INPUT>());
+
     public static void PressKey(string name)
     {
         (ushort vk, bool ext) key;

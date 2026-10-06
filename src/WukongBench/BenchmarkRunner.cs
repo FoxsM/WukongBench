@@ -11,7 +11,47 @@ public sealed class BenchmarkRunner
     private readonly AppConfig _cfg;
     private readonly string _gameDir;
 
+    private IntPtr _hwnd;
+
     public BenchmarkRunner(AppConfig cfg, string gameDir) { _cfg = cfg; _gameDir = gameDir; }
+
+    /// <summary>Выполняет сценарий StartActions: Key:..., Click:x,y, Wait:мс.</summary>
+    private void RunStartActions()
+    {
+        Log.Info($"Запускаю тест: {string.Join(" → ", _cfg.StartActions)}");
+        foreach (var raw in _cfg.StartActions)
+        {
+            var parts = raw.Split(':', 2, StringSplitOptions.TrimEntries);
+            var cmd = parts[0].ToLowerInvariant();
+            var arg = parts.Length > 1 ? parts[1] : "";
+            try
+            {
+                switch (cmd)
+                {
+                    case "wait":
+                        Thread.Sleep(int.Parse(arg));
+                        break;
+                    case "key":
+                        InputSender.FocusWindow(_hwnd);
+                        Thread.Sleep(200);
+                        InputSender.PressKey(arg);
+                        break;
+                    case "click":
+                        var xy = arg.Split(',', StringSplitOptions.TrimEntries);
+                        InputSender.FocusWindow(_hwnd);
+                        Thread.Sleep(200);
+                        InputSender.ClickRelative(_hwnd,
+                            double.Parse(xy[0], System.Globalization.CultureInfo.InvariantCulture),
+                            double.Parse(xy[1], System.Globalization.CultureInfo.InvariantCulture));
+                        break;
+                    default:
+                        Log.Warn($"Неизвестная команда сценария: {raw}");
+                        break;
+                }
+            }
+            catch (Exception e) { Log.Warn($"Команда «{raw}» не выполнена: {e.Message}"); }
+        }
+    }
 
     public IReadOnlyList<string> ResultDirs =>
         _cfg.ResultDirs.Select(Environment.ExpandEnvironmentVariables).ToList();
@@ -39,14 +79,8 @@ public sealed class BenchmarkRunner
         var hwnd = WaitForWindow(proc, TimeSpan.FromMinutes(2));
         Thread.Sleep(TimeSpan.FromSeconds(_cfg.MenuLoadDelaySeconds));
 
-        Log.Info($"Запускаю тест: клавиши [{string.Join(", ", _cfg.StartKeys)}]");
-        foreach (var key in _cfg.StartKeys)
-        {
-            InputSender.FocusWindow(hwnd != IntPtr.Zero ? hwnd : proc.MainWindowHandle);
-            Thread.Sleep(300);
-            InputSender.PressKey(key);
-            Thread.Sleep(_cfg.KeyDelayMs);
-        }
+        _hwnd = hwnd != IntPtr.Zero ? hwnd : proc.MainWindowHandle;
+        RunStartActions();
 
         Log.Info($"[{testName}] Бенчмарк идёт. Жду файл результатов (таймаут {_cfg.BenchmarkTimeoutMinutes} мин)…");
         var result = WaitForResult(before, started, proc, TimeSpan.FromMinutes(_cfg.BenchmarkTimeoutMinutes));
@@ -122,6 +156,7 @@ public sealed class BenchmarkRunner
     {
         var sw = Stopwatch.StartNew();
         var lastProgress = TimeSpan.Zero;
+        bool retried = false;
 
         while (sw.Elapsed < timeout)
         {
@@ -142,12 +177,20 @@ public sealed class BenchmarkRunner
             if (proc.HasExited)
                 throw new Exception("Бенчмарк закрылся раньше, чем появился файл результатов.");
 
+            if (!retried && _cfg.StartRetryMinutes > 0 && sw.Elapsed >= TimeSpan.FromMinutes(_cfg.StartRetryMinutes))
+            {
+                // Прогон длится ~2.5 мин + загрузка; если результата всё нет — скорее всего, старт не сработал.
+                retried = true;
+                Log.Warn($"Результата нет {_cfg.StartRetryMinutes} мин — похоже, тест не стартовал. Повторяю сценарий запуска.");
+                proc.Refresh();
+                if (proc.MainWindowHandle != IntPtr.Zero) _hwnd = proc.MainWindowHandle;
+                RunStartActions();
+            }
+
             if (sw.Elapsed - lastProgress >= TimeSpan.FromSeconds(30))
             {
                 lastProgress = sw.Elapsed;
                 Log.Info($"  …прошло {sw.Elapsed:mm\\:ss}");
-                if (sw.Elapsed >= TimeSpan.FromSeconds(90) && sw.Elapsed < TimeSpan.FromSeconds(120))
-                    Log.Warn("  Если тест так и не стартовал — нажмите в окне бенчмарка кнопку запуска вручную, утилита продолжит сама.");
             }
             Thread.Sleep(2000);
         }

@@ -3,6 +3,7 @@ using System.Text;
 using WukongBench;
 
 Console.OutputEncoding = Encoding.UTF8;
+NativeMethods.EnableDpiAwareness();
 Console.WriteLine("=== WukongBench — автоматический CPU/GPU прогон Black Myth: Wukong Benchmark Tool ===\n");
 
 // ---------- Аргументы ----------
@@ -93,7 +94,11 @@ try
         parsed.AppliedSettings = applied;
         parsed.Resolution = res;
         parsed.Duration = sw.Elapsed;
+        parsed.Verification = SettingsApplier.Verify(parsed, profile, res);
         results.Add(parsed);
+
+        if (parsed.Verification.Count == 0) Log.Ok("Проверка: бенчмарк работал с заданными настройками.");
+        foreach (var issue in parsed.Verification) Log.Warn("Проверка: " + issue);
 
         Log.Ok($"{profile.Name}: Avg {parsed.FpsAvg:0.0} FPS, Min {parsed.FpsMin:0.0}, FPS95 {parsed.Fps95:0.0}");
     }

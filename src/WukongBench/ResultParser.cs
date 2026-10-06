@@ -16,6 +16,10 @@ public sealed class BenchmarkResult
     public double? Low1Percent { get; set; }
     public double? Low01Percent { get; set; }
     public double? FrameTimeAvgMs { get; set; }
+    /// <summary>Среднее время кадра на стороне CPU / GPU из Records — показывает, что было узким местом.</summary>
+    public double? CpuFrameTimeAvgMs { get; set; }
+    public double? GpuFrameTimeAvgMs { get; set; }
+    public double? VramUsageAvgGb { get; set; }
     public int RecordsCount { get; set; }
     /// <summary>Прочие скалярные поля из JSON (загрузка CPU/GPU, настройки, версия и т.д.).</summary>
     public SortedDictionary<string, string> OtherMetrics { get; set; } = new();
@@ -24,6 +28,8 @@ public sealed class BenchmarkResult
     public TestProfile? Profile { get; set; }
     public string Resolution { get; set; } = "";
     public TimeSpan Duration { get; set; }
+    /// <summary>Расхождения между заданными и фактическими (из JSON бенчмарка) настройками.</summary>
+    public List<string> Verification { get; set; } = new();
 }
 
 /// <summary>
@@ -117,21 +123,32 @@ public static class ResultParser
     private static void ComputeLows(JsonElement arr, BenchmarkResult r)
     {
         var frameTimes = new List<double>();
+        List<double> cpuFt = new(), gpuFt = new(), vram = new();
         foreach (var item in arr.EnumerateArray())
         {
             if (item.ValueKind == JsonValueKind.Number) { var fps = item.GetDouble(); if (fps > 0) frameTimes.Add(1000.0 / fps); continue; }
             if (item.ValueKind != JsonValueKind.Object) continue;
 
+            // Формат Wukong: {FrameRate, CPUFrameTime, GPUFrameTime, CPUUsage, GPUUsage, VideoMemoryUsage, TimeStamp}.
+            // Итоговый FPS — только FrameRate; CPU/GPUFrameTime — отдельные метрики, а не время кадра.
             double? ft = null, fps2 = null;
             foreach (var p in item.EnumerateObject())
             {
                 if (p.Value.ValueKind != JsonValueKind.Number) continue;
-                if (Regex.IsMatch(p.Name, "frame.?time|^ft$|delta", RegexOptions.IgnoreCase)) ft ??= p.Value.GetDouble();
-                else if (Regex.IsMatch(p.Name, "^fps$|fps$", RegexOptions.IgnoreCase)) fps2 ??= p.Value.GetDouble();
+                var v = p.Value.GetDouble();
+                if (Regex.IsMatch(p.Name, "^(fps|framerate)$", RegexOptions.IgnoreCase)) fps2 ??= v;
+                else if (Regex.IsMatch(p.Name, "^(frame.?time|ft)$", RegexOptions.IgnoreCase)) ft ??= v;
+                else if (p.Name.Equals("CPUFrameTime", StringComparison.OrdinalIgnoreCase)) cpuFt.Add(v);
+                else if (p.Name.Equals("GPUFrameTime", StringComparison.OrdinalIgnoreCase)) gpuFt.Add(v);
+                else if (p.Name.Equals("VideoMemoryUsage", StringComparison.OrdinalIgnoreCase)) vram.Add(v);
             }
-            if (ft is > 0) frameTimes.Add(ft.Value < 1 ? ft.Value * 1000 : ft.Value); // сек → мс
-            else if (fps2 is > 0) frameTimes.Add(1000.0 / fps2.Value);
+            if (fps2 is > 0) frameTimes.Add(1000.0 / fps2.Value);
+            else if (ft is > 0) frameTimes.Add(ft.Value < 1 ? ft.Value * 1000 : ft.Value); // сек → мс
         }
+
+        if (cpuFt.Count > 0) r.CpuFrameTimeAvgMs = cpuFt.Average();
+        if (gpuFt.Count > 0) r.GpuFrameTimeAvgMs = gpuFt.Average();
+        if (vram.Count > 0) r.VramUsageAvgGb = vram.Average();
 
         if (frameTimes.Count < 100) return;
         frameTimes.Sort();

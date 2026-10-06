@@ -35,11 +35,11 @@ public static class ReportWriter
 
         sb.AppendLine("## Результаты");
         sb.AppendLine();
-        sb.AppendLine("| Тест | Разрешение | Avg FPS | Min FPS | Max FPS | FPS95 | 1% low* | 0.1% low* | Frametime, мс* | Длительность |");
-        sb.AppendLine("|---|---|---|---|---|---|---|---|---|---|");
+        sb.AppendLine("| Тест | Разрешение | Avg FPS | Min FPS | Max FPS | FPS95 | 1% low* | 0.1% low* | Frametime, мс* | CPU frametime, мс* | GPU frametime, мс* | VRAM, ГБ* | Длительность |");
+        sb.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         foreach (var r in results)
             sb.AppendLine($"| **{r.TestName}** | {r.Resolution} | **{F(r.FpsAvg)}** | {F(r.FpsMin)} | {F(r.FpsMax)} | {F(r.Fps95)} | " +
-                          $"{F(r.Low1Percent)} | {F(r.Low01Percent)} | {F(r.FrameTimeAvgMs)} | {r.Duration:mm\\:ss} |");
+                          $"{F(r.Low1Percent)} | {F(r.Low01Percent)} | {F(r.FrameTimeAvgMs)} | {F(r.CpuFrameTimeAvgMs)} | {F(r.GpuFrameTimeAvgMs)} | {F(r.VramUsageAvgGb)} | {r.Duration:mm\\:ss} |");
         sb.AppendLine();
         sb.AppendLine("\\* посчитано утилитой из покадровых записей `Records` (если бенчмарк их сохранил).");
         sb.AppendLine();
@@ -55,7 +55,12 @@ public static class ReportWriter
                 sb.AppendLine($"- Масштаб рендера (Super Resolution / sg.ResolutionQuality): **{p.ResolutionScale}%**");
                 sb.AppendLine($"- Общее качество: **{p.QualityName(p.Quality)}**, дальность прорисовки: **{p.QualityName(p.ViewDistance >= 0 ? p.ViewDistance : p.Quality)}**");
                 sb.AppendLine($"- Full Ray Tracing: **{(p.RayTracing ? "Вкл" : "Выкл")}**");
-                sb.AppendLine("- VSync: выкл, лимит FPS: нет, динамическое разрешение: выкл");
+                sb.AppendLine($"- Full Ray Tracing уровень: **{(p.RayTracing ? new[] { "Low", "Medium", "High", "Very High" }[Math.Clamp(p.RayTracingLevel, 0, 3)] : "—")}**");
+                sb.AppendLine("- Генерация кадров: выкл, VSync: выкл, лимит FPS: нет, динамическое разрешение: выкл");
+                sb.AppendLine();
+                sb.AppendLine(r.Verification.Count == 0
+                    ? "✅ Проверка по JSON бенчмарка: настройки применились."
+                    : "⚠️ Проверка по JSON бенчмарка:\n" + string.Join("\n", r.Verification.Select(v => "  - " + v)));
                 sb.AppendLine();
             }
             sb.AppendLine("<details><summary>Записанные в GameUserSettings.ini значения</summary>");
@@ -106,7 +111,10 @@ public static class ReportWriter
             Console.WriteLine($"  {r.TestName,-5} {r.Resolution,-12} {F(r.FpsAvg),8} {F(r.FpsMin),8} {F(r.FpsMax),8} {F(r.Fps95),8} {F(r.Low1Percent),8} {r.Duration,7:mm\\:ss}");
             Console.ResetColor();
             if (r.Profile is { } p)
-                Console.WriteLine($"        {p.QualityName(p.Quality)}, scale {p.ResolutionScale}%, RT {(p.RayTracing ? "on" : "off")}, VSync off, no FPS cap");
+                Console.WriteLine($"        {p.QualityName(p.Quality)}, scale {p.ResolutionScale}%, RT {(p.RayTracing ? "on" : "off")}, FG off, VSync off, no FPS cap");
+            if (r.CpuFrameTimeAvgMs.HasValue)
+                Console.WriteLine($"        CPU frametime {F(r.CpuFrameTimeAvgMs)} мс | GPU frametime {F(r.GpuFrameTimeAvgMs)} мс | VRAM {F(r.VramUsageAvgGb)} ГБ");
+            foreach (var v in r.Verification) { Console.ForegroundColor = ConsoleColor.Yellow; Console.WriteLine("        ! " + v); Console.ResetColor(); }
         }
         Console.WriteLine(new string('═', 78));
     }

@@ -7,7 +7,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>WukongBench</AssemblyName>
     <RootNamespace>WukongBench</RootNamespace>
-    <SupportedOSPlatformVersion>10.0</SupportedOSPlatformVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
